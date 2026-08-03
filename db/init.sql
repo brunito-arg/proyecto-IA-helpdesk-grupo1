@@ -28,4 +28,4 @@ CREATE TABLE incidents (
 
 -- Admin por defecto: admin@helpdesk.com / admin123
 INSERT INTO users (nombre, email, password, rol) VALUES
-('Admin Helpdesk', 'admin@helpdesk.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'ADMIN');
+('Admin Helpdesk', 'admin@helpdesk.com', '$2b$10$eoIRMhGWTIwfbOBEVphigOJ.spSO3Nzr3qyUzJDrIZjDyLMqGyOx6', 'ADMIN');

@@ -3,9 +3,9 @@ server:
 
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/helpdesk?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-    username: root
-    password: loquesea2008
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/helpdesk?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:loquesea2008}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
@@ -22,6 +22,6 @@ spring:
 
 app:
   jwt:
-    secret: "UnaClaveSecretaMuyLargaYSeguraParaElHelpdeskConJWTSuperSegura2024"
+    secret: ${APP_JWT_SECRET:UnaClaveSecretaMuyLargaYSeguraParaElHelpdeskConJWTSuperSegura2024}
     expiration-ms: 86400000
-  upload-dir: uploads
+  upload-dir: ${APP_UPLOAD_DIR:uploads}
