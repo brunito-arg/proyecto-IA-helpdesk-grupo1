@@ -44,6 +44,10 @@ Este documento describe las tecnologías detectadas en el repositorio y el conte
 - Backend: Spring Boot, Spring Web, Spring Data JPA, Spring Security, jjwt, Hibernate, MySQL, Lombok, Maven.
 - Frontend: React, Vite, Tailwind CSS, Axios, React Router.
 
+## Riesgos de seguridad
+
+- **Credenciales en texto plano**: `application.yml` contiene la contraseña de MySQL y el secreto JWT hardcodeados. No deben exponerse en repositorios públicos; se recomienda externalizarlas en variables de entorno o un gestor de secretos.
+
 ## Notas de uso
 
 - El backend expone APIs REST consumidas por el frontend mediante `axios`.
