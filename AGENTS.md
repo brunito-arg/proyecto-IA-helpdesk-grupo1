@@ -1,5 +1,7 @@
 # AGENTS.md — Guía del proyecto Helpdesk
 
+> Reglas normativas obligatorias: ver `/.instructions.md`.
+
 Esta guía describe cómo funciona el proyecto para que una IA (o cualquier desarrollador) pueda entenderlo, modificarlo y verificar cambios de forma fiable.
 
 ## 1. Descripción del proyecto
