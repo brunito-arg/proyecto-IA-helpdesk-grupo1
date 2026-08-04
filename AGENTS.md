@@ -87,6 +87,8 @@ Nota: rutas autenticadas exigen header `Authorization: Bearer <token>`. La autor
 
 ## 7. Convenciones de código
 
+> **Las reglas obligatorias de código están en `instructions.md`.** Este archivo documenta la arquitectura, API y ejecución del proyecto.
+
 **Cómo agregar un endpoint (patrón en capas):**
 1. `model/` — entidad JPA con Lombok (`@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`). Enums con `@Enumerated(EnumType.STRING)`.
 2. `repository/` — interfaz que extiende `JpaRepository`.
