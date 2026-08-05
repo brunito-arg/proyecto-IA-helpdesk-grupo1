@@ -18,6 +18,7 @@ CREATE TABLE incidents (
     prioridad ENUM('BAJA', 'MEDIA', 'ALTA', 'CRITICA') NOT NULL DEFAULT 'MEDIA',
     estado ENUM('ABIERTO', 'EN_PROCESO', 'RESUELTO', 'CERRADO') NOT NULL DEFAULT 'ABIERTO',
     archivo_url VARCHAR(500) DEFAULT NULL,
+    nota_resolucion TEXT DEFAULT NULL,
     usuario_id BIGINT NOT NULL,
     tecnico_id BIGINT DEFAULT NULL,
     fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -29,3 +30,7 @@ CREATE TABLE incidents (
 -- Admin por defecto: admin@helpdesk.com / admin123
 INSERT INTO users (nombre, email, password, rol) VALUES
 ('Admin Helpdesk', 'admin@helpdesk.com', '$2b$10$eoIRMhGWTIwfbOBEVphigOJ.spSO3Nzr3qyUzJDrIZjDyLMqGyOx6', 'ADMIN');
+
+-- Tecnico por defecto: tecnico@helpdesk.com / tecnico123
+INSERT INTO users (nombre, email, password, rol) VALUES
+('Tecnico Helpdesk', 'tecnico@helpdesk.com', '$2a$10$kbibvlepOKwB6BHcufq0yeRSeHTqhhHUzLzXpHNNl7dYuGfKOoid2', 'TECNICO');

@@ -70,6 +70,21 @@ public class IncidentService {
         return toResponse(incident);
     }
 
+    public IncidentResponse cerrarIncidente(Long id, String nota, User currentUser) {
+        if (currentUser.getRol() != Role.TECNICO && currentUser.getRol() != Role.ADMIN) {
+            throw new RuntimeException("Solo un técnico o administrador puede cerrar incidentes");
+        }
+        if (nota == null || nota.isBlank()) {
+            throw new RuntimeException("La nota de resolución es obligatoria");
+        }
+        Incident incident = incidentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Incidente no encontrado"));
+        incident.setNotaResolucion(nota);
+        incident.setEstado(IncidentStatus.CERRADO);
+        incident = incidentRepository.save(incident);
+        return toResponse(incident);
+    }
+
     public IncidentResponse assignTecnico(Long incidentId, Long tecnicoId) {
         Incident incident = incidentRepository.findById(incidentId)
                 .orElseThrow(() -> new RuntimeException("Incidente no encontrado"));
@@ -90,6 +105,7 @@ public class IncidentService {
                 .prioridad(i.getPrioridad().name())
                 .estado(i.getEstado().name())
                 .archivoUrl(i.getArchivoUrl())
+                .notaResolucion(i.getNotaResolucion())
                 .usuarioId(i.getUsuario().getId())
                 .usuarioNombre(i.getUsuario().getNombre())
                 .tecnicoId(i.getTecnico() != null ? i.getTecnico().getId() : null)

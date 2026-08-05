@@ -40,6 +40,9 @@ public class Incident {
     @Column(name = "archivo_url", length = 500)
     private String archivoUrl;
 
+    @Column(name = "nota_resolucion", columnDefinition = "TEXT")
+    private String notaResolucion;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "usuario_id", nullable = false)
     private User usuario;

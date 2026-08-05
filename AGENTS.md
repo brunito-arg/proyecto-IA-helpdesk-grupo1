@@ -57,7 +57,7 @@ frontend/src/
 ## 5. Modelo de datos
 
 - **users**: id, nombre, email (único), password (BCrypt), rol (enum), fecha_registro.
-- **incidents**: id, titulo, descripcion, categoria (enum), prioridad (enum), estado (enum), archivo_url, usuario_id (FK, no nulo), tecnico_id (FK, nullable), fecha_creacion, fecha_actualizacion.
+- **incidents**: id, titulo, descripcion, categoria (enum), prioridad (enum), estado (enum), archivo_url, nota_resolucion (TEXT, nullable), usuario_id (FK, no nulo), tecnico_id (FK, nullable), fecha_creacion, fecha_actualizacion.
 
 Enums (persistidos como STRING):
 - `Role`: USER, TECNICO, ADMIN
@@ -81,6 +81,7 @@ Todas las rutas cuelgan del contexto root (sin prefijo `/api` en Spring, el `/ap
 | `POST /api/incidents` | autenticado | Crear incidencia. **multipart**: `data` = JSON, `file` opcional |
 | `GET /api/incidents/{id}` | autenticado | Detalle de incidencia |
 | `PUT /api/incidents/{id}/status` | autenticado | Cambiar estado (body: texto plano con el enum, ej. `RESUELTO`) |
+| `PUT /api/incidents/{id}/close` | autenticado (TECNICO/ADMIN) | Cerrar incidencia con nota de resolución (body JSON `{ "nota": "..." }`, nota obligatoria). Pone estado CERRADO |
 | `PUT /api/incidents/{id}/assign/{tecnicoId}` | autenticado | Asignar técnico (pone estado EN_PROCESO) |
 | `GET /uploads/{filename}` | público | Servir archivo subido |
 | `/api/admin/**` | ADMIN | (marcado en SecurityConfig; aún sin controlador) |
@@ -146,7 +147,9 @@ docker compose up --build
 - Backend: `cd backend && mvn spring-boot:run`
 - Frontend: `cd frontend && npm install && npm run dev` (proxy a `http://localhost:8080`)
 
-**Usuario admin por defecto:** `admin@helpdesk.com` / `admin123` (se crea en `db/init.sql`).
+**Usuarios por defecto:**
+- Admin: `admin@helpdesk.com` / `admin123` (se crea en `db/init.sql`)
+- Técnico: `tecnico@helpdesk.com` / `tecnico123` (se crea en `db/init.sql`)
 
 ## 12. Verificación de cambios
 

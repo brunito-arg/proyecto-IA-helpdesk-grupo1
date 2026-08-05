@@ -17,6 +17,7 @@ public class IncidentResponse {
     private String prioridad;
     private String estado;
     private String archivoUrl;
+    private String notaResolucion;
     private Long usuarioId;
     private String usuarioNombre;
     private Long tecnicoId;

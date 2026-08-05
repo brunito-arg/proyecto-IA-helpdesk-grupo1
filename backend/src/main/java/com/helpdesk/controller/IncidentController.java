@@ -1,5 +1,6 @@
 package com.helpdesk.controller;
 
+import com.helpdesk.dto.CloseIncidentRequest;
 import com.helpdesk.dto.IncidentRequest;
 import com.helpdesk.dto.IncidentResponse;
 import com.helpdesk.model.Role;
@@ -53,6 +54,14 @@ public class IncidentController {
             @PathVariable Long id,
             @RequestBody String estado) {
         return ResponseEntity.ok(incidentService.updateStatus(id, estado));
+    }
+
+    @PutMapping("/{id}/close")
+    public ResponseEntity<IncidentResponse> close(
+            @PathVariable Long id,
+            @Valid @RequestBody CloseIncidentRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(incidentService.cerrarIncidente(id, request.getNota(), user));
     }
 
     @PutMapping("/{id}/assign/{tecnicoId}")

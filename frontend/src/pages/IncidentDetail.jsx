@@ -16,6 +16,8 @@ export default function IncidentDetail() {
   const { user } = useAuth()
   const [incident, setIncident] = useState(null)
   const [tecnicos, setTecnicos] = useState([])
+  const [nota, setNota] = useState('')
+  const [cerrando, setCerrando] = useState(false)
 
   useEffect(() => {
     api.get(`/incidents/${id}`).then((res) => setIncident(res.data))
@@ -38,9 +40,22 @@ export default function IncidentDetail() {
     setIncident(res.data)
   }
 
+  const cerrarIncidente = async () => {
+    setCerrando(true)
+    try {
+      await api.put(`/incidents/${id}/close`, { nota })
+      const res = await api.get(`/incidents/${id}`)
+      setIncident(res.data)
+      setNota('')
+    } finally {
+      setCerrando(false)
+    }
+  }
+
   if (!incident) return <p className="text-center py-10">Cargando...</p>
 
-  const puedeCambiarEstado = user?.rol === 'ADMIN' || user?.rol === 'TECNICO'
+  const puedeCambiarEstado = user?.rol === 'ADMIN'
+  const puedeCerrar = user?.rol === 'ADMIN' || user?.rol === 'TECNICO'
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -77,6 +92,13 @@ export default function IncidentDetail() {
           </div>
         )}
 
+        {incident.notaResolucion && (
+          <div className="mb-4">
+            <h2 className="font-medium mb-2">Nota de resolución</h2>
+            <p className="text-gray-700 whitespace-pre-wrap">{incident.notaResolucion}</p>
+          </div>
+        )}
+
         {puedeCambiarEstado && (
           <div className="border-t pt-4 mt-4">
             <h2 className="font-medium mb-2">Cambiar Estado</h2>
@@ -104,6 +126,23 @@ export default function IncidentDetail() {
                 <option key={t.id} value={t.id}>{t.nombre} ({t.email})</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {puedeCerrar && incident.estado !== 'CERRADO' && (
+          <div className="border-t pt-4 mt-4">
+            <h2 className="font-medium mb-2">Cerrar Incidente</h2>
+            <textarea value={nota} onChange={(e) => setNota(e.target.value)}
+              placeholder="Nota de resolución (obligatoria)"
+              rows="3"
+              className="w-full border rounded px-3 py-2 mb-3"></textarea>
+            <button onClick={cerrarIncidente}
+              disabled={!nota.trim() || cerrando}
+              className={`px-4 py-2 rounded text-sm ${!nota.trim() || cerrando
+                ? 'bg-gray-300 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'}`}>
+              {cerrando ? 'Cerrando...' : 'Cerrar Incidente'}
+            </button>
           </div>
         )}
       </div>
