@@ -5,6 +5,15 @@
       "type": "remote",
       "url": "https://api.githubcopilot.com/mcp/readonly",
       "enabled": true
+    },
+    "slack": {
+      "type": "local",
+      "command": ["npx", "-y", "slack-mcp-server@latest", "--transport", "stdio"],
+      "enabled": true,
+      "env": {
+        "SLACK_MCP_XOXB_TOKEN": "{env:SLACK_BOT_TOKEN}",
+        "SLACK_MCP_ADD_MESSAGE_TOOL": "true"
+      }
     }
   }
 }
