@@ -5,7 +5,7 @@
       "type": "remote",
       "url": "https://api.githubcopilot.com/mcp/readonly",
       "enabled": true
-    },
+      },
     "slack": {
       "type": "local",
       "command": ["npx", "-y", "slack-mcp-server@latest", "--transport", "stdio"],
@@ -15,5 +15,5 @@
         "SLACK_MCP_ADD_MESSAGE_TOOL": "true"
       }
     }
-  }
+  } 
 }
