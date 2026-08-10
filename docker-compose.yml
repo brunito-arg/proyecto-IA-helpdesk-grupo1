@@ -23,6 +23,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-loquesea2008}
       APP_JWT_SECRET: ${JWT_SECRET:-UnaClaveSecretaMuyLargaYSeguraParaElHelpdeskConJWTSuperSegura2024}
       APP_UPLOAD_DIR: /app/uploads
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
     ports:
       - "8080:8080"
     volumes:

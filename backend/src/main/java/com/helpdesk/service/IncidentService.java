@@ -16,6 +16,7 @@ public class IncidentService {
 
     private final IncidentRepository incidentRepository;
     private final UserRepository userRepository;
+    private final SlackNotifier slackNotifier;
 
     public IncidentResponse create(IncidentRequest request, Long usuarioId, String archivoUrl) {
         User usuario = userRepository.findById(usuarioId)
@@ -34,7 +35,9 @@ public class IncidentService {
                 .build();
 
         incident = incidentRepository.save(incident);
-        return toResponse(incident);
+        IncidentResponse response = toResponse(incident);
+        slackNotifier.notifyNewIncident(response);
+        return response;
     }
 
     public List<IncidentResponse> getAll() {

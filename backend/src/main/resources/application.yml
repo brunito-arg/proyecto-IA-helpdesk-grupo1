@@ -25,3 +25,5 @@ app:
     secret: ${APP_JWT_SECRET:UnaClaveSecretaMuyLargaYSeguraParaElHelpdeskConJWTSuperSegura2024}
     expiration-ms: 86400000
   upload-dir: ${APP_UPLOAD_DIR:uploads}
+  slack:
+    webhook-url: ${SLACK_WEBHOOK_URL:}
