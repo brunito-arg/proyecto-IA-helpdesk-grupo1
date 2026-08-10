@@ -10,7 +10,7 @@
       "type": "local",
       "command": ["npx", "-y", "slack-mcp-server@latest", "--transport", "stdio"],
       "enabled": true,
-      "env": {
+      "environment": {
         "SLACK_MCP_XOXB_TOKEN": "{env:SLACK_BOT_TOKEN}",
         "SLACK_MCP_ADD_MESSAGE_TOOL": "true"
       }
