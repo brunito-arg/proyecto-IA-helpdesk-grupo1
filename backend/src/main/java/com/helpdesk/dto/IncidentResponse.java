@@ -18,6 +18,7 @@ public class IncidentResponse {
     private String estado;
     private String archivoUrl;
     private String notaResolucion;
+    private String githubIssueUrl;
     private Long usuarioId;
     private String usuarioNombre;
     private Long tecnicoId;

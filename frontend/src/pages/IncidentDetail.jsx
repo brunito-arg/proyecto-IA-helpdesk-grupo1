@@ -92,6 +92,15 @@ export default function IncidentDetail() {
           </div>
         )}
 
+        {incident.githubIssueUrl && (
+          <div className="mb-4">
+            <a href={incident.githubIssueUrl} target="_blank" rel="noreferrer"
+              className="text-indigo-700 hover:underline text-sm">
+              Ver issue de GitHub
+            </a>
+          </div>
+        )}
+
         {incident.notaResolucion && (
           <div className="mb-4">
             <h2 className="font-medium mb-2">Nota de resolución</h2>

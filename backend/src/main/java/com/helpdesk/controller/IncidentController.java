@@ -1,6 +1,7 @@
 package com.helpdesk.controller;
 
 import com.helpdesk.dto.CloseIncidentRequest;
+import com.helpdesk.dto.GithubIssueLinkRequest;
 import com.helpdesk.dto.IncidentRequest;
 import com.helpdesk.dto.IncidentResponse;
 import com.helpdesk.model.Role;
@@ -62,6 +63,13 @@ public class IncidentController {
             @Valid @RequestBody CloseIncidentRequest request,
             @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(incidentService.cerrarIncidente(id, request.getNota(), user));
+    }
+
+    @PutMapping("/{id}/github-issue")
+    public ResponseEntity<IncidentResponse> registerGithubIssue(
+            @PathVariable Long id,
+            @Valid @RequestBody GithubIssueLinkRequest request) {
+        return ResponseEntity.ok(incidentService.registerGithubIssue(id, request.getUrl()));
     }
 
     @PutMapping("/{id}/assign/{tecnicoId}")

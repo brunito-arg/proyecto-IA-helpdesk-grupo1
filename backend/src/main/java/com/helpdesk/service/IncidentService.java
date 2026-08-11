@@ -88,6 +88,14 @@ public class IncidentService {
         return toResponse(incident);
     }
 
+    public IncidentResponse registerGithubIssue(Long id, String url) {
+        Incident incident = incidentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Incidente no encontrado"));
+        incident.setGithubIssueUrl(url);
+        incident = incidentRepository.save(incident);
+        return toResponse(incident);
+    }
+
     public IncidentResponse assignTecnico(Long incidentId, Long tecnicoId) {
         Incident incident = incidentRepository.findById(incidentId)
                 .orElseThrow(() -> new RuntimeException("Incidente no encontrado"));
@@ -109,6 +117,7 @@ public class IncidentService {
                 .estado(i.getEstado().name())
                 .archivoUrl(i.getArchivoUrl())
                 .notaResolucion(i.getNotaResolucion())
+                .githubIssueUrl(i.getGithubIssueUrl())
                 .usuarioId(i.getUsuario().getId())
                 .usuarioNombre(i.getUsuario().getNombre())
                 .tecnicoId(i.getTecnico() != null ? i.getTecnico().getId() : null)

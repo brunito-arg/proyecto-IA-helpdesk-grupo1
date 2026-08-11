@@ -43,6 +43,9 @@ public class Incident {
     @Column(name = "nota_resolucion", columnDefinition = "TEXT")
     private String notaResolucion;
 
+    @Column(name = "github_issue_url", length = 500)
+    private String githubIssueUrl;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "usuario_id", nullable = false)
     private User usuario;
