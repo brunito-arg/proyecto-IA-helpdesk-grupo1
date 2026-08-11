@@ -12,7 +12,7 @@ Sistema de helpdesk (gestión de incidencias) con roles **USER**, **TECNICO** y 
 - **TECNICO**: ve todas las incidencias, las asigna/atiende y cambia su estado.
 - **ADMIN**: todo lo anterior + panel de administración (cambiar roles de usuarios).
 
-Funcionalidad clave: registro/login con JWT, CRUD de incidencias con subida opcional de archivo, asignación de técnicos, cambios de estado y panel admin.
+Funcionalidad clave: registro/login con JWT, CRUD de incidencias con subida opcional de archivo, asignación de técnicos, cambios de estado y panel admin. Además, notificación de incidencias a Slack (`SlackNotifier`) y sincronización de incidencias de categoría **SOFTWARE** con issues del repositorio de GitHub mediante un agente de opencode (`github-issues`) + MCP de GitHub.
 
 ## 2. Arquitectura y flujo de datos
 
@@ -37,14 +37,17 @@ Funcionalidad clave: registro/login con JWT, CRUD de incidencias con subida opci
 backend/src/main/java/com/helpdesk/
   ├── config/      SecurityConfig, JwtUtil, JwtAuthFilter
   ├── controller/  AuthController, UserController, IncidentController, FileController
-  ├── dto/         LoginRequest, RegisterRequest, IncidentRequest, AuthResponse, IncidentResponse, UserResponse
+  ├── dto/         LoginRequest, RegisterRequest, IncidentRequest, AuthResponse, IncidentResponse, UserResponse, CloseIncidentRequest, GithubIssueLinkRequest
   ├── exception/   GlobalExceptionHandler
   ├── model/       User, Incident y enums (Role, Category, Priority, IncidentStatus)
   ├── repository/  UserRepository, IncidentRepository
-  └── service/     AuthService, IncidentService, FileStorageService
+  └── service/     AuthService, IncidentService, FileStorageService, SlackNotifier
 backend/src/main/resources/application.yml   Configuración (puertos, BD, JWT, uploads)
 db/init.sql                                  Esquema + datos iniciales (crea el admin)
 docker-compose.yml                           MySQL + backend + frontend
+opencode.json                                Configuración de opencode (MCP servers github y slack)
+.opencode/agent/github-issues.md             Agente que crea issues de GitHub para incidentes SOFTWARE
+scripts/sync-github-issues.ps1               Ejecuta el agente github-issues (tarea programada)
 frontend/src/
   ├── api/axios.js        Cliente axios con interceptores
   ├── components/         Layout, Navbar, ProtectedRoute
@@ -57,7 +60,7 @@ frontend/src/
 ## 5. Modelo de datos
 
 - **users**: id, nombre, email (único), password (BCrypt), rol (enum), fecha_registro.
-- **incidents**: id, titulo, descripcion, categoria (enum), prioridad (enum), estado (enum), archivo_url, nota_resolucion (TEXT, nullable), usuario_id (FK, no nulo), tecnico_id (FK, nullable), fecha_creacion, fecha_actualizacion.
+- **incidents**: id, titulo, descripcion, categoria (enum), prioridad (enum), estado (enum), archivo_url, nota_resolucion (TEXT, nullable), github_issue_url (nullable, enlace al issue de GitHub creado), usuario_id (FK, no nulo), tecnico_id (FK, nullable), fecha_creacion, fecha_actualizacion.
 
 Enums (persistidos como STRING):
 - `Role`: USER, TECNICO, ADMIN
@@ -83,6 +86,7 @@ Todas las rutas cuelgan del contexto root (sin prefijo `/api` en Spring, el `/ap
 | `PUT /api/incidents/{id}/status` | autenticado | Cambiar estado (body: texto plano con el enum, ej. `RESUELTO`) |
 | `PUT /api/incidents/{id}/close` | autenticado (TECNICO/ADMIN) | Cerrar incidencia con nota de resolución (body JSON `{ "nota": "..." }`, nota obligatoria). Pone estado CERRADO |
 | `PUT /api/incidents/{id}/assign/{tecnicoId}` | autenticado | Asignar técnico (pone estado EN_PROCESO) |
+| `PUT /api/incidents/{id}/github-issue` | autenticado | Registrar el enlace del issue de GitHub (body JSON `{ "url": "..." }`). Lo usa el agente `github-issues` |
 | `GET /uploads/{filename}` | público | Servir archivo subido |
 | `/api/admin/**` | ADMIN | (marcado en SecurityConfig; aún sin controlador) |
 
@@ -126,6 +130,7 @@ El frontend lee `error.response.data.error` para mostrar el mensaje (`Login.jsx`
 | `SPRING_DATASOURCE_PASSWORD` | `loquesea2008` | Contraseña MySQL |
 | `APP_JWT_SECRET` | secreto de desarrollo | Secreto de firma JWT |
 | `APP_UPLOAD_DIR` | `uploads` | Carpeta de subidas |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | *(vacío)* | PAT de GitHub con *Issues: Read & Write*; lo usa el MCP github para crear issues |
 | `VITE_PROXY_TARGET` | `http://localhost:8080` | Target del proxy de Vite (solo frontend) |
 
 En Docker (`docker-compose.yml`) se configuran además `.env` con `MYSQL_ROOT_PASSWORD` y `JWT_SECRET`. El backend en contenedor conecta a `mysql:3306`, no a `localhost`.
@@ -151,6 +156,21 @@ docker compose up --build
 - Admin: `admin@helpdesk.com` / `admin123` (se crea en `db/init.sql`)
 - Técnico: `tecnico@helpdesk.com` / `tecnico123` (se crea en `db/init.sql`)
 
+## 11.1 Sincronización de incidentes SOFTWARE con GitHub (issues)
+
+Cuando se abre un incidente de categoría **SOFTWARE**, puede crearse un issue en el repositorio `brunito-arg/proyecto-IA-helpdesk-grupo1` con el label `software`. Esto lo hace el **agente de opencode** `github-issues` (`.opencode/agent/github-issues.md`), que usa el MCP de GitHub con permisos de escritura.
+
+**Flujo del agente:**
+1. Login al backend con el admin por defecto (`http://localhost:8080/api/auth/login`).
+2. `GET /api/incidents` → filtra `categoria == "SOFTWARE"` **y** `githubIssueUrl == null`.
+3. Antes de crear, verifica que no exista ya un issue con título `[Helpdesk #<id>]` (idempotencia, evita duplicados en corridas repetidas).
+4. Crea el issue con título `[Helpdesk #<id>] <titulo>` y label `software`.
+5. Registra el enlace del issue con `PUT /api/incidents/{id}/github-issue`, dejando el incidente vinculado.
+
+**Cuándo corre:** no es en tiempo real. Se ejecuta a mano (`opencode run --agent github-issues`) o por una tarea programada de Windows que llame a `scripts/sync-github-issues.ps1` (el script verifica que el backend esté arriba y luego lanza el agente).
+
+**Requisitos:** opencode instalado, Docker Desktop corriendo (el MCP github es `docker run ... ghcr.io/github/github-mcp-server`), `GITHUB_PERSONAL_ACCESS_TOKEN` en `.env`, backend arriba en `localhost:8080` y Python en el PATH.
+
 ## 12. Verificación de cambios
 
 **No existe suite de tests** (ni backend ni frontend). Para validar cambios:
@@ -173,4 +193,7 @@ docker compose up --build
 - **Subida de archivos**: límite 10 MB (multipart en `application.yml`); los archivos se guardan con nombre UUID en `app.upload-dir` y se sirven por `GET /uploads/{filename}` (público).
 - **Hash del admin**: si `db/init.sql` se toca, el hash BCrypt debe corresponder a la contraseña documentada (el original del repo no coincidía con `admin123`).
 - **Puerto 80**: el frontend se publica en `localhost` (puerto 80); si el puerto está ocupado, el contenedor no arranca (usar `localhost:5173`).
+- **MCP github requiere Docker Desktop y PAT**: sin Docker corriendo o sin `GITHUB_PERSONAL_ACCESS_TOKEN` en `.env`, las tools del MCP github dan error/401 (verificar con `opencode mcp list`).
+- **Owner/repo hardcodeado en el agente**: `github-issues.md` apunta a `brunito-arg/proyecto-IA-helpdesk-grupo1`. Si se corre desde un fork, los issues igual se crean en ese repo.
+- **Build viejo del backend**: si el contenedor no se reconstruyó tras agregar el endpoint `/github-issue`, el `PUT` responde 403/404 (reconstruir con `docker compose up -d --build backend`).
 - **Archivo `nul`** en la raíz: artefacto vacío de Windows; no es parte del proyecto (se puede ignorar/eliminar).
