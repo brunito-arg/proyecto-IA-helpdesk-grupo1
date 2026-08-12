@@ -8,4 +8,5 @@ backend/target/
 .vscode/
 .env
 uploads/
+opencode/data/
 nul
