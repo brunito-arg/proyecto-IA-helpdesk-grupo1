@@ -29,6 +29,44 @@ def build_prompt(context, question, history):
     return "\n\n".join(parts)
 
 
+def ask(question, collection, args, history):
+    context = []
+    if collection is not None:
+        try:
+            result = collection.query(query_texts=[question], n_results=args.top_k)
+            docs = result.get("documents", [[]])[0]
+            metas = result.get("metadatas", [[]])[0]
+            context = list(zip(docs, metas))
+        except Exception as e:
+            print(f"[chat] Error al recuperar contexto: {e}")
+            return None
+
+    user_prompt = build_prompt(context, question, history)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    print("=" * 60)
+    try:
+        stream = ollama.chat(model=args.model, messages=messages, stream=True)
+        answer_parts = []
+        for piece in stream:
+            token = piece["message"]["content"]
+            print(token, end="", flush=True)
+            answer_parts.append(token)
+        print()
+    except Exception as e:
+        print(f"\n[chat] Error al generar respuesta (¿Ollama esta corriendo?): {e}")
+        return None
+    print("=" * 60)
+
+    answer = "".join(answer_parts)
+    history.append({"role": "user", "content": question})
+    history.append({"role": "assistant", "content": answer})
+    return history[-8:]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chat RAG local con Ollama (qwen2.5:3b) sobre la documentacion del proyecto.")
     parser.add_argument("--model", default="qwen2.5:3b", help="Modelo de Ollama (default: qwen2.5:3b).")
@@ -42,6 +80,8 @@ def main():
     parser.add_argument("--collection", default="docs", help="Nombre de la coleccion (default: docs).")
     parser.add_argument("--no-rag", action="store_true",
                         help="Chatear con el modelo sin recuperar contexto de la base de conocimiento.")
+    parser.add_argument("-q", "--query", default=None,
+                        help="Consulta de una sola vez (sin entrar al REPL).")
     args = parser.parse_args()
 
     collection = None
@@ -56,6 +96,12 @@ def main():
             sys.exit(1)
 
     history = []
+
+    if args.query:
+        if not ask(args.query, collection, args, history):
+            sys.exit(1)
+        return
+
     print(f"[chat] Modelo: {args.model} | 'salir' termina | 'limpiar' resetea el historial")
     print("=" * 60)
     while True:
@@ -73,40 +119,7 @@ def main():
             print("[chat] Historial reseteado.")
             continue
 
-        context = []
-        if collection is not None:
-            try:
-                result = collection.query(query_texts=[question], n_results=args.top_k)
-                docs = result.get("documents", [[]])[0]
-                metas = result.get("metadatas", [[]])[0]
-                context = list(zip(docs, metas))
-            except Exception as e:
-                print(f"[chat] Error al recuperar contexto: {e}")
-                continue
-
-        user_prompt = build_prompt(context, question, history)
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-
-        print("=" * 60)
-        try:
-            stream = ollama.chat(model=args.model, messages=messages, stream=True)
-            answer_parts = []
-            for piece in stream:
-                token = piece["message"]["content"]
-                print(token, end="", flush=True)
-                answer_parts.append(token)
-            print()
-        except Exception as e:
-            print(f"\n[chat] Error al generar respuesta (¿Ollama esta corriendo?): {e}")
-            continue
-        print("=" * 60)
-
-        answer = "".join(answer_parts)
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": answer})
+        ask(question, collection, args, history)
         history = history[-8:]
 
     print("Chau!")
