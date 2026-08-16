@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.venv/
+kb/
 backend/target/
 *.class
 *.jar

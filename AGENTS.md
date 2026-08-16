@@ -171,6 +171,34 @@ Cuando se abre un incidente de categoría **SOFTWARE**, puede crearse un issue e
 
 **Requisitos:** opencode instalado, Docker Desktop corriendo (el MCP github es `docker run ... ghcr.io/github/github-mcp-server`), `GITHUB_PERSONAL_ACCESS_TOKEN` en `.env`, backend arriba en `localhost:8080` y Python en el PATH.
 
+## 11.2 Chat local con Ollama (RAG)
+
+Asistente por consola que responde preguntas sobre la documentación del proyecto usando `qwen2.5:3b` (Ollama) + chromadb (vector store local). No toca el backend ni el frontend.
+
+**Requisitos:** Ollama instalado y corriendo, modelos `qwen2.5:3b` y `nomic-embed-text` bajados (`ollama pull qwen2.5:3b` y `ollama pull nomic-embed-text`) y Python 3.11 (preferir el de python.org, no el de msys64, para que las wheels de chromadb instalen bien).
+
+**Setup (una vez):**
+```bash
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+**Ingesta de documentación** (arma la base de conocimiento en `kb/`):
+```bash
+.\.venv\Scripts\python.exe scripts/ingest.py
+```
+- Por defecto ingiere `AGENTS.md`, `instructions.md`, `.opencode/agent/*.md` y `.opencode/readme.md`. Personalizable con `--docs`.
+- Reconstruye la colección en cada corrida (idempotente); usar `--append` para agregar sin borrar.
+- Embeddings generados por Ollama con `nomic-embed-text` (modelo de embeddings dedicado; `qwen2.5:3b` es de chat y Ollama rechaza usarlo para embeddings). Personalizable con `--embed-model`.
+
+**Chat:**
+```bash
+.\.venv\Scripts\python.exe scripts/chat.py
+```
+- Recupera los `-k` (default 5) fragmentos más relevantes, los pone como contexto y responde con `qwen2.5:3b` (streaming).
+- Comandos del REPL: `salir`/`exit` termina, `limpiar`/`clear` resetea el historial. `--no-rag` chatea sin contexto.
+- `kb/` es local y no se commitea (está en `.gitignore`). Si el modelo de embeddings se cambia, hay que re-correr `ingest.py`.
+
 ## 12. Verificación de cambios
 
 **No existe suite de tests** (ni backend ni frontend). Para validar cambios:
