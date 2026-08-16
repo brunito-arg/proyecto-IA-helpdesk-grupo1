@@ -1,4 +1,4 @@
-# AGENTS.md — Guía del proyecto Helpdesk
+# AGENTS.md — Guía del proyecto Helpdesk.
 
 > Reglas normativas obligatorias: ver `/.instructions.md`.
 
