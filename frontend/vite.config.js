@@ -8,6 +8,11 @@ export default defineConfig({
     proxy: {
       '/api': process.env.VITE_PROXY_TARGET || 'http://localhost:8080',
       '/uploads': process.env.VITE_PROXY_TARGET || 'http://localhost:8080',
+      '/asistente-api': {
+        target: process.env.VITE_ASSISTANT_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/asistente-api/, ''),
+      },
     },
   },
 })

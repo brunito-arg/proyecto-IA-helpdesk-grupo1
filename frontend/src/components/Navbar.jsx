@@ -18,6 +18,7 @@ export default function Navbar() {
             <Link to="/" className="text-xl font-bold">Helpdesk</Link>
             <Link to="/dashboard" className="hover:text-indigo-200">Mis Incidentes</Link>
             <Link to="/create" className="hover:text-indigo-200">Nuevo Incidente</Link>
+            <Link to="/asistente" className="hover:text-indigo-200">Asistente</Link>
             {user?.rol === 'ADMIN' && (
               <Link to="/admin" className="hover:text-indigo-200">Admin</Link>
             )}

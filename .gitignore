@@ -2,6 +2,7 @@ node_modules/
 dist/
 .venv/
 kb/
+server/__pycache__/
 backend/target/
 *.class
 *.jar

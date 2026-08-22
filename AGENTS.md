@@ -12,12 +12,13 @@ Sistema de helpdesk (gestión de incidencias) con roles **USER**, **TECNICO** y 
 - **TECNICO**: ve todas las incidencias, las asigna/atiende y cambia su estado.
 - **ADMIN**: todo lo anterior + panel de administración (cambiar roles de usuarios).
 
-Funcionalidad clave: registro/login con JWT, CRUD de incidencias con subida opcional de archivo, asignación de técnicos, cambios de estado y panel admin. Además, notificación de incidencias a Slack (`SlackNotifier`) y sincronización de incidencias de categoría **SOFTWARE** con issues del repositorio de GitHub mediante un agente de opencode (`github-issues`) + MCP de GitHub.
+Funcionalidad clave: registro/login con JWT, CRUD de incidencias con subida opcional de archivo, asignación de técnicos, cambios de estado y panel admin. Además, notificación de incidencias a Slack (`SlackNotifier`), un chatbot RAG sobre la documentación del proyecto disponible en la página `/asistente` para cualquier usuario logueado (§11.3), y sincronización de incidencias de categoría **SOFTWARE** con issues del repositorio de GitHub mediante un agente de opencode (`github-issues`) + MCP de GitHub.
 
 ## 2. Arquitectura y flujo de datos
 
 ```
 [React + Vite (frontend)]  ── proxy /api y /uploads ──►  [Spring Boot (backend) :8080]  ──►  [MySQL (BD "helpdesk")]
+[React + Vite (frontend)]  ── proxy /asistente-api  ──►  [FastAPI (asistente) :8000]  ──►  [Ollama + chromadb (host)]
 ```
 
 - El frontend **nunca** llama al backend directamente: usa `baseURL: '/api'` (relativo) y Vite proxya `/api` y `/uploads` al backend. En Docker el target es `http://backend:8080`; en local `http://localhost:8080`. Configurable con `VITE_PROXY_TARGET` (`frontend/vite.config.js`).
@@ -44,16 +45,20 @@ backend/src/main/java/com/helpdesk/
   └── service/     AuthService, IncidentService, FileStorageService, SlackNotifier
 backend/src/main/resources/application.yml   Configuración (puertos, BD, JWT, uploads)
 db/init.sql                                  Esquema + datos iniciales (crea el admin)
-docker-compose.yml                           MySQL + backend + frontend
+docker-compose.yml                           MySQL + backend + frontend + asistente
 opencode.json                                Configuración de opencode (MCP servers github y slack)
 .opencode/agent/github-issues.md             Agente que crea issues de GitHub para incidentes SOFTWARE
 scripts/sync-github-issues.ps1               Ejecuta el agente github-issues (tarea programada)
+scripts/ingest.py                            Ingesta de documentación en chromadb (KB del chatbot)
+scripts/chat.py                              Chat RAG por consola (versión original del asistente)
+server/main.py                               Servicio FastAPI del asistente (chat RAG con streaming SSE)
+server/Dockerfile                            Imagen Python 3.11-slim del asistente
 frontend/src/
   ├── api/axios.js        Cliente axios con interceptores
   ├── components/         Layout, Navbar, ProtectedRoute
   ├── context/            AuthContext.jsx
   ├── hooks/useAuth.js    Hook de acceso al contexto
-  ├── pages/              Login, Register, Dashboard, CreateIncident, IncidentDetail, AdminPanel, Profile
+  ├── pages/              Login, Register, Dashboard, CreateIncident, IncidentDetail, AdminPanel, Profile, Asistente
   └── App.jsx             Rutas
 ```
 
@@ -132,6 +137,9 @@ El frontend lee `error.response.data.error` para mostrar el mensaje (`Login.jsx`
 | `APP_UPLOAD_DIR` | `uploads` | Carpeta de subidas |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` | *(vacío)* | PAT de GitHub con *Issues: Read & Write*; lo usa el MCP github para crear issues |
 | `VITE_PROXY_TARGET` | `http://localhost:8080` | Target del proxy de Vite (solo frontend) |
+| `VITE_ASSISTANT_TARGET` | `http://localhost:8000` | Target del proxy `/asistente-api` de Vite (solo frontend) |
+| `OLLAMA_URL` | `http://localhost:11434` (`http://host.docker.internal:11434` en Docker) | Servidor Ollama que usa el asistente |
+| `KB_DIR` | `kb` (`/app/kb` en Docker) | Carpeta chromadb del asistente |
 
 En Docker (`docker-compose.yml`) se configuran además `.env` con `MYSQL_ROOT_PASSWORD` y `JWT_SECRET`. El backend en contenedor conecta a `mysql:3306`, no a `localhost`.
 
@@ -198,6 +206,28 @@ py -3.11 -m venv .venv
 - Recupera los `-k` (default 5) fragmentos más relevantes, los pone como contexto y responde con `qwen2.5:3b` (streaming).
 - Comandos del REPL: `salir`/`exit` termina, `limpiar`/`clear` resetea el historial. `--no-rag` chatea sin contexto.
 - `kb/` es local y no se commitea (está en `.gitignore`). Si el modelo de embeddings se cambia, hay que re-correr `ingest.py`.
+
+## 11.3 Chatbot web (página Asistente)
+
+El chatbot está disponible desde el frontend para **cualquier usuario logueado** (USER, TECNICO y ADMIN): página `/asistente` con link en el Navbar. Es un servicio FastAPI independiente (`server/`) que reutiliza la misma KB de chromadb (`kb/`, generada con `scripts/ingest.py`) y los mismos modelos de Ollama que la versión de consola (§11.2).
+
+**Endpoints del asistente** (puerto 8000):
+| Método y ruta | Descripción |
+|---|---|
+| `GET /health` | Estado de Ollama y de la KB (`{ ollama, kb, chunks, modelo }`) |
+| `POST /chat` | Chat RAG con streaming SSE. Body: `{ "mensaje": "...", "historial": [{ "role": "user"|"assistant", "content": "..." }] }` (historial opcional, últimos 8). Responde `data: {"token": "..."}` por cada fragmento, errores como `data: {"error": "..."}`, y termina con `data: [DONE]` |
+
+- El historial lo mantiene el frontend (state de React), el servicio no guarda estado.
+- El acceso queda protegido por login (ruta `ProtectedRoute`); el servicio Python no valida JWT.
+- El frontend lo consume vía proxy `/asistente-api` → target configurable con `VITE_ASSISTANT_TARGET` (`http://localhost:8000` local; `http://asistente:8000` en Docker).
+
+**Requisitos:** los mismos de §11.2 (Ollama corriendo, modelos bajados, `kb/` generada) más `fastapi`/`uvicorn`:
+```bash
+.\.venv\Scripts\python.exe -m pip install -r server/requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn main:app --port 8000   # correr dentro de server/
+```
+
+**Verificación rápida:** `curl http://localhost:8000/health` y luego un POST a `/chat`.
 
 ## 12. Verificación de cambios
 

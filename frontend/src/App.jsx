@@ -9,6 +9,7 @@ import CreateIncident from './pages/CreateIncident'
 import IncidentDetail from './pages/IncidentDetail'
 import AdminPanel from './pages/AdminPanel'
 import Profile from './pages/Profile'
+import Asistente from './pages/Asistente'
 
 export default function App() {
   return (
@@ -25,6 +26,9 @@ export default function App() {
           } />
           <Route path="/incidents/:id" element={
             <ProtectedRoute><IncidentDetail /></ProtectedRoute>
+          } />
+          <Route path="/asistente" element={
+            <ProtectedRoute><Asistente /></ProtectedRoute>
           } />
           <Route path="/admin" element={
             <ProtectedRoute roles={['ADMIN']}><AdminPanel /></ProtectedRoute>

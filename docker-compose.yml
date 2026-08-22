@@ -32,16 +32,29 @@ services:
       mysql:
         condition: service_healthy
 
+  asistente:
+    build: ./server
+    container_name: helpdesk-asistente
+    environment:
+      OLLAMA_URL: http://host.docker.internal:11434
+      KB_DIR: /app/kb
+    volumes:
+      - ./kb:/app/kb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   frontend:
     build: ./frontend
     container_name: helpdesk-frontend
     environment:
       VITE_PROXY_TARGET: http://backend:8080
+      VITE_ASSISTANT_TARGET: http://asistente:8000
     ports:
       - "80:5173"
       - "5173:5173"
     depends_on:
       - backend
+      - asistente
 
 volumes:
   mysql-data:
