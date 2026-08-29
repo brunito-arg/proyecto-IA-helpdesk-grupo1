@@ -29,14 +29,18 @@ def build_prompt(context, question, history):
     return "\n\n".join(parts)
 
 
-def ask(question, collection, args, history):
+def ask(question, colecciones, args, history):
     context = []
-    if collection is not None:
+    if colecciones:
         try:
-            result = collection.query(query_texts=[question], n_results=args.top_k)
-            docs = result.get("documents", [[]])[0]
-            metas = result.get("metadatas", [[]])[0]
-            context = list(zip(docs, metas))
+            por_col = max(1, args.top_k // max(1, len(colecciones)))
+            for coleccion in colecciones:
+                result = coleccion.query(query_texts=[question], n_results=por_col)
+                docs = result.get("documents", [[]])[0]
+                metas = result.get("metadatas", [[]])[0]
+                context.extend(zip(docs, metas))
+            vistos = set()
+            context = [fm for fm in context if not (fm[0] in vistos or vistos.add(fm[0]))][:args.top_k]
         except Exception as e:
             print(f"[chat] Error al recuperar contexto: {e}")
             return None
@@ -78,27 +82,33 @@ def main():
                         help="Cantidad de fragmentos recuperados (default: 5).")
     parser.add_argument("--db", default="kb", help="Carpeta persistente de chromadb (default: kb).")
     parser.add_argument("--collection", default="docs", help="Nombre de la coleccion (default: docs).")
+    parser.add_argument("--adjuntos-collection", default="adjuntos",
+                        help="Nombre de la coleccion de adjuntos (default: adjuntos).")
     parser.add_argument("--no-rag", action="store_true",
                         help="Chatear con el modelo sin recuperar contexto de la base de conocimiento.")
     parser.add_argument("-q", "--query", default=None,
                         help="Consulta de una sola vez (sin entrar al REPL).")
     args = parser.parse_args()
 
-    collection = None
+    colecciones = []
     if not args.no_rag:
         client = chromadb.PersistentClient(path=args.db)
         embedding_fn = OllamaEmbeddingFunction(url=args.ollama_url, model_name=args.embed_model)
-        try:
-            collection = client.get_collection(args.collection, embedding_function=embedding_fn)
-            print(f"[chat] Base de conocimiento cargada: '{args.collection}' ({collection.count()} chunks)")
-        except Exception as e:
-            print(f"[chat] Error: no se pudo abrir la coleccion '{args.collection}'. Corri primero scripts/ingest.py ({e})")
+        for nombre in (args.collection, args.adjuntos_collection):
+            try:
+                collection = client.get_collection(nombre, embedding_function=embedding_fn)
+                colecciones.append(collection)
+                print(f"[chat] Base de conocimiento cargada: '{collection.name}' ({collection.count()} chunks)")
+            except Exception as e:
+                print(f"[chat] Advertencia: no se pudo abrir la coleccion '{nombre}' ({e})")
+        if not colecciones:
+            print("[chat] Error: no hay colecciones disponibles. Corri primero scripts/ingest.py")
             sys.exit(1)
 
     history = []
 
     if args.query:
-        if not ask(args.query, collection, args, history):
+        if not ask(args.query, colecciones, args, history):
             sys.exit(1)
         return
 
@@ -119,7 +129,7 @@ def main():
             print("[chat] Historial reseteado.")
             continue
 
-        ask(question, collection, args, history)
+        ask(question, colecciones, args, history)
         history = history[-8:]
 
     print("Chau!")

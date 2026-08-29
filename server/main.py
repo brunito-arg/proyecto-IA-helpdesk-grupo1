@@ -15,6 +15,7 @@ sys.stderr.reconfigure(encoding="utf-8")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 KB_DIR = os.getenv("KB_DIR", "kb")
 COLLECTION = os.getenv("KB_COLLECTION", "docs")
+ADJUNTOS_COLLECTION = os.getenv("KB_ADJUNTOS", "adjuntos")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 MODEL = os.getenv("CHAT_MODEL", "qwen2.5:3b")
 TOP_K = int(os.getenv("TOP_K", "5"))
@@ -42,26 +43,39 @@ class ChatRequest(BaseModel):
     historial: list[Mensaje] = Field(default_factory=list)
 
 
-def cargar_coleccion():
+def cargar_colecciones():
     client = chromadb.PersistentClient(path=KB_DIR)
     embedding_fn = OllamaEmbeddingFunction(url=OLLAMA_URL, model_name=EMBED_MODEL)
-    return client.get_collection(COLLECTION, embedding_function=embedding_fn)
+    colecciones = []
+    for nombre in (COLLECTION, ADJUNTOS_COLLECTION):
+        try:
+            colecciones.append(client.get_collection(nombre, embedding_function=embedding_fn))
+        except Exception as e:
+            print(f"[asistente] No se pudo abrir la coleccion '{nombre}'. Corré scripts/ingest.py o scripts/ingest_adjuntos.py ({e})")
+    return colecciones
 
 
-try:
-    coleccion = cargar_coleccion()
-    print(f"[asistente] Base de conocimiento cargada: '{COLLECTION}' ({coleccion.count()} chunks)")
-except Exception as e:
-    coleccion = None
-    print(f"[asistente] Advertencia: no se pudo abrir la coleccion '{COLLECTION}'. Corré scripts/ingest.py ({e})")
+colecciones = cargar_colecciones()
+for c in colecciones:
+    print(f"[asistente] Base de conocimiento cargada: '{c.name}' ({c.count()} chunks)")
 
 
 def recuperar_contexto(pregunta):
-    result = coleccion.query(query_texts=[pregunta], n_results=TOP_K)
-    docs = result.get("documents", [[]])[0]
-    metas = result.get("metadatas", [[]])[0]
+    por_col = max(1, TOP_K // max(1, len(colecciones)))
+    fragmentos = []
+    for coleccion in colecciones:
+        result = coleccion.query(query_texts=[pregunta], n_results=por_col)
+        docs = result.get("documents", [[]])[0]
+        metas = result.get("metadatas", [[]])[0]
+        fragmentos.extend(zip(docs, metas))
+    vistos = set()
+    unicos = []
+    for doc, meta in fragmentos:
+        if doc not in vistos:
+            vistos.add(doc)
+            unicos.append((doc, meta))
     return "\n\n".join(
-        f"[Fuente: {m.get('archivo', '?')}] {doc}" for doc, m in zip(docs, metas)
+        f"[Fuente: {m.get('archivo', '?')}] {doc}" for doc, m in unicos[:TOP_K]
     )
 
 
@@ -84,15 +98,16 @@ def health():
         pass
     return {
         "ollama": ollama_ok,
-        "kb": coleccion is not None,
-        "chunks": coleccion.count() if coleccion is not None else 0,
+        "kb": len(colecciones) > 0,
+        "chunks": sum(c.count() for c in colecciones),
+        "colecciones": [c.name for c in colecciones],
         "modelo": MODEL,
     }
 
 
 @app.post("/chat")
 def chat(req: ChatRequest):
-    if coleccion is None:
+    if not colecciones:
         def error_kb():
             yield sse({"error": "Base de conocimiento no inicializada. Corré scripts/ingest.py."})
             yield "data: [DONE]\n\n"

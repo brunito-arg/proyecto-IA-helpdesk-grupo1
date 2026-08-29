@@ -51,6 +51,8 @@ opencode.json                                Configuración de opencode (MCP ser
 scripts/sync-github-issues.ps1               Ejecuta el agente github-issues (tarea programada)
 scripts/ingest.py                            Ingesta de documentación en chromadb (KB del chatbot)
 scripts/chat.py                              Chat RAG por consola (versión original del asistente)
+scripts/ingest_adjuntos.py                   Ingesta de archivos adjuntos de incidentes en chromadb
+scripts/sync-adjuntos.ps1                    Ejecuta ingest_adjuntos.py (tarea programada)
 server/main.py                               Servicio FastAPI del asistente (chat RAG con streaming SSE)
 server/Dockerfile                            Imagen Python 3.11-slim del asistente
 frontend/src/
@@ -212,12 +214,12 @@ py -3.11 -m venv .venv
 
 ## 11.3 Chatbot web (página Asistente)
 
-El chatbot está disponible desde el frontend para **cualquier usuario logueado** (USER, TECNICO y ADMIN): página `/asistente` con link en el Navbar. Es un servicio FastAPI independiente (`server/`) que reutiliza la misma KB de chromadb (`kb/`, generada con `scripts/ingest.py`) y los mismos modelos de Ollama que la versión de consola (§11.2).
+El chatbot está disponible desde el frontend para **cualquier usuario logueado** (USER, TECNICO y ADMIN): página `/asistente` con link en el Navbar. Es un servicio FastAPI independiente (`server/`) que reutiliza la misma KB de chromadb (`kb/`) y los mismos modelos de Ollama que la versión de consola (§11.2). Además de la documentación (`docs`, `scripts/ingest.py`) consulta el contenido de los archivos adjuntos de los incidentes (`adjuntos`, `scripts/ingest_adjuntos.py`; ver §11.4).
 
 **Endpoints del asistente** (puerto 8000):
 | Método y ruta | Descripción |
 |---|---|
-| `GET /health` | Estado de Ollama y de la KB (`{ ollama, kb, chunks, modelo }`) |
+| `GET /health` | Estado de Ollama y de la KB (`{ ollama, kb, chunks, colecciones, modelo }`) |
 | `POST /chat` | Chat RAG con streaming SSE. Body: `{ "mensaje": "...", "historial": [{ "role": "user"|"assistant", "content": "..." }] }` (historial opcional, últimos 8). Responde `data: {"token": "..."}` por cada fragmento, errores como `data: {"error": "..."}`, y termina con `data: [DONE]` |
 
 - El historial lo mantiene el frontend (state de React), el servicio no guarda estado.
@@ -231,6 +233,27 @@ El chatbot está disponible desde el frontend para **cualquier usuario logueado*
 ```
 
 **Verificación rápida:** `curl http://localhost:8000/health` y luego un POST a `/chat`.
+
+## 11.4 Adjuntos de incidentes en el chatbot (IA)
+
+El chatbot también puede responder sobre el **contenido de los archivos adjuntos** de los incidentes. Los adjuntos se guardan en `./uploads/` con nombre UUID (`incidents.archivo_url`); para indexarlos se usa un script separado que ingiere su texto en la colección `adjuntos` de chromadb (la misma KB `kb/` que `docs`).
+
+**Ingesta de adjuntos** (arma la parte de la KB con el contenido de los archivos):
+```bash
+.\.venv\Scripts\python.exe scripts/ingest_adjuntos.py
+```
+- Login al backend (admin por defecto: `admin@helpdesk.com` / `admin123`, sobrescribible con `--admin-email`/`--admin-password`), toma `GET /api/incidents` y arma el mapa `archivo_url → incidente`.
+- Lee cada archivo de `uploads/` y extrae texto según extensión: `.txt/.md/.log/.csv/.json/.xml/.html/.yml` directo, `.pdf` con PyMuPDF, `.docx` con python-docx. Las imágenes (`.png/.jpg/.gif/...`) se omiten con warning (no hay OCR).
+- Chunking idéntico al de `ingest.py` (800/100), embeddings `nomic-embed-text`, y agrega a la colección `adjuntos` con metadatos `{archivo: "Adjunto #<id> <titulo>", filename, incident_id, incident_titulo, tipo}`.
+- Por defecto **reconstruye** la colección `adjuntos` (idempotente, sin duplicados). `--append` agrega sin borrar.
+
+**Cómo el chatbot la usa:** `server/main.py` y `scripts/chat.py` recuperan contexto de **dos colecciones** (`docs` = documentación del proyecto + `adjuntos` = archivos de incidentes) y mezclan/dedupean los `TOP_K` resultados. `/health` expone `colecciones` y el total de `chunks` de ambas.
+
+**Cuándo corre:** no en tiempo real. Se ejecuta a mano o por tarea programada de Windows que llame a `scripts/sync-adjuntos.ps1` (verifica que el backend esté arriba y lanza la ingesta con el Python del venv).
+
+**Requisitos adicionales** sobre los de §11.2: `PyMuPDF` y `python-docx` (ya en `requirements.txt`), backend arriba en `localhost:8080` y `./uploads/` accesible desde donde corre el script.
+
+**Verificación:** tras correr la ingesta, preguntarle al `/asistente` (o `chat.py`) por el contenido de un archivo adjunto; la respuesta debe citar "Adjunto #&lt;id&gt;".
 
 ## 12. Verificación de cambios
 

@@ -1,2 +1,4 @@
 chromadb
 ollama
+PyMuPDF
+python-docx
