@@ -21,10 +21,8 @@ export default function IncidentDetail() {
 
   useEffect(() => {
     api.get(`/incidents/${id}`).then((res) => setIncident(res.data))
-    if (user?.rol === 'ADMIN') {
-      api.get('/users/tecnicos').then((res) => setTecnicos(res.data))
-    }
-  }, [id, user])
+    api.get('/users/tecnicos').then((res) => setTecnicos(res.data))
+  }, [id])
 
   const cambiarEstado = async (estado) => {
     await api.put(`/incidents/${id}/status`, estado, {
@@ -135,10 +133,10 @@ export default function IncidentDetail() {
           </div>
         )}
 
-        {user?.rol === 'ADMIN' && !incident.tecnicoId && (
+        {user && (
           <div className="border-t pt-4 mt-4">
             <h2 className="font-medium mb-2">Asignar Técnico</h2>
-            <select onChange={(e) => asignarTecnico(e.target.value)} defaultValue=""
+            <select onChange={(e) => asignarTecnico(e.target.value)} value={incident.tecnicoId || ''}
               className="border rounded px-3 py-2">
               <option value="" disabled>Seleccionar técnico</option>
               {tecnicos.map((t) => (
