@@ -52,6 +52,16 @@ export default function IncidentDetail() {
     }
   }
 
+  const eliminarIncidente = async () => {
+    if (!window.confirm('¿Eliminar este incidente de forma permanente?')) return
+    try {
+      await api.delete(`/incidents/${id}`)
+      navigate('/')
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error al eliminar el incidente')
+    }
+  }
+
   if (!incident) return <p className="text-center py-10">Cargando...</p>
 
   const puedeCambiarEstado = user?.rol === 'ADMIN'
@@ -151,6 +161,15 @@ export default function IncidentDetail() {
                 ? 'bg-gray-300 cursor-not-allowed'
                 : 'bg-green-600 text-white hover:bg-green-700'}`}>
               {cerrando ? 'Cerrando...' : 'Cerrar Incidente'}
+            </button>
+          </div>
+        )}
+
+        {user?.rol === 'ADMIN' && (
+          <div className="border-t pt-4 mt-4">
+            <button onClick={eliminarIncidente}
+              className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700">
+              Eliminar Incidente
             </button>
           </div>
         )}

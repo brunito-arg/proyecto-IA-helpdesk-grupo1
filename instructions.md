@@ -90,6 +90,7 @@ Al agregar un endpoint, seguir este orden estricto:
 | `/api/auth/**` | Público |
 | `/uploads/**` | Público |
 | `/api/admin/**` | Solo ADMIN |
+| `DELETE /api/incidents/**` | Solo ADMIN |
 | `/api/users/**` (GET/PUT) | Autenticado |
 | Resto de `/api/**` | Autenticado |
 

@@ -92,6 +92,7 @@ Todas las rutas cuelgan del contexto root (sin prefijo `/api` en Spring, el `/ap
 | `PUT /api/incidents/{id}/close` | autenticado (TECNICO/ADMIN) | Cerrar incidencia con nota de resolución (body JSON `{ "nota": "..." }`, nota obligatoria). Pone estado CERRADO |
 | `PUT /api/incidents/{id}/assign/{tecnicoId}` | autenticado | Asignar técnico (pone estado EN_PROCESO) |
 | `PUT /api/incidents/{id}/github-issue` | autenticado | Registrar el enlace del issue de GitHub (body JSON `{ "url": "..." }`). Lo usa el agente `github-issues` |
+| `DELETE /api/incidents/{id}` | ADMIN | Eliminar incidencia de la BD (borra también el archivo adjunto si existe) |
 | `GET /uploads/{filename}` | público | Servir archivo subido |
 | `/api/admin/**` | ADMIN | (marcado en SecurityConfig; aún sin controlador) |
 

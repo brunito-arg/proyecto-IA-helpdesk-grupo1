@@ -45,4 +45,12 @@ public class FileStorageService {
             throw new RuntimeException("No se pudo almacenar el archivo", e);
         }
     }
+
+    public void deleteFile(String filename) {
+        try {
+            Files.deleteIfExists(uploadPath.resolve(filename));
+        } catch (IOException e) {
+            throw new RuntimeException("No se pudo eliminar el archivo adjunto", e);
+        }
+    }
 }

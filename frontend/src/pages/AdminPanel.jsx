@@ -24,6 +24,17 @@ export default function AdminPanel() {
     setUsers(res.data)
   }
 
+  const eliminarIncidente = async (id) => {
+    if (!window.confirm('¿Eliminar este incidente de forma permanente?')) return
+    try {
+      await api.delete(`/incidents/${id}`)
+      const res = await api.get('/incidents')
+      setAllIncidents(res.data)
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error al eliminar el incidente')
+    }
+  }
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Panel de Administración</h1>
@@ -71,6 +82,7 @@ export default function AdminPanel() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Técnico</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prioridad</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acción</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -83,6 +95,12 @@ export default function AdminPanel() {
                 <td className="px-6 py-4 text-sm">{inc.tecnicoNombre || '-'}</td>
                 <td className="px-6 py-4"><span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">{inc.estado}</span></td>
                 <td className="px-6 py-4 text-sm">{inc.prioridad}</td>
+                <td className="px-6 py-4">
+                  <button onClick={() => eliminarIncidente(inc.id)}
+                    className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700">
+                    Eliminar
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

@@ -78,4 +78,12 @@ public class IncidentController {
             @PathVariable Long tecnicoId) {
         return ResponseEntity.ok(incidentService.assignTecnico(id, tecnicoId));
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User user) {
+        incidentService.deleteIncidente(id, user);
+        return ResponseEntity.noContent().build();
+    }
 }

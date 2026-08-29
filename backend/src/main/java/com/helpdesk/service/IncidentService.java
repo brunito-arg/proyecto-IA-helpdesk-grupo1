@@ -17,6 +17,7 @@ public class IncidentService {
     private final IncidentRepository incidentRepository;
     private final UserRepository userRepository;
     private final SlackNotifier slackNotifier;
+    private final FileStorageService fileStorageService;
 
     public IncidentResponse create(IncidentRequest request, Long usuarioId, String archivoUrl) {
         User usuario = userRepository.findById(usuarioId)
@@ -105,6 +106,18 @@ public class IncidentService {
         incident.setEstado(IncidentStatus.EN_PROCESO);
         incident = incidentRepository.save(incident);
         return toResponse(incident);
+    }
+
+    public void deleteIncidente(Long id, User currentUser) {
+        if (currentUser.getRol() != Role.ADMIN) {
+            throw new RuntimeException("Solo un administrador puede eliminar incidentes");
+        }
+        Incident incident = incidentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Incidente no encontrado"));
+        if (incident.getArchivoUrl() != null) {
+            fileStorageService.deleteFile(incident.getArchivoUrl());
+        }
+        incidentRepository.deleteById(id);
     }
 
     private IncidentResponse toResponse(Incident i) {
