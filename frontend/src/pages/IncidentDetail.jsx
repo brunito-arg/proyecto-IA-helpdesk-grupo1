@@ -16,13 +16,31 @@ export default function IncidentDetail() {
   const { user } = useAuth()
   const [incident, setIncident] = useState(null)
   const [tecnicos, setTecnicos] = useState([])
+  const [comentarios, setComentarios] = useState([])
+  const [nuevoComentario, setNuevoComentario] = useState('')
   const [nota, setNota] = useState('')
   const [cerrando, setCerrando] = useState(false)
 
   useEffect(() => {
     api.get(`/incidents/${id}`).then((res) => setIncident(res.data))
     api.get('/users/tecnicos').then((res) => setTecnicos(res.data))
+    api.get(`/incidents/${id}/comments`).then((res) => setComentarios(res.data))
   }, [id])
+
+  const cargarComentarios = () => {
+    api.get(`/incidents/${id}/comments`).then((res) => setComentarios(res.data))
+  }
+
+  const agregarComentario = async () => {
+    if (!nuevoComentario.trim()) return
+    try {
+      await api.post(`/incidents/${id}/comments`, { contenido: nuevoComentario })
+      setNuevoComentario('')
+      cargarComentarios()
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error al agregar comentario')
+    }
+  }
 
   const cambiarEstado = async (estado) => {
     await api.put(`/incidents/${id}/status`, estado, {
@@ -115,6 +133,35 @@ export default function IncidentDetail() {
             <p className="text-gray-700 whitespace-pre-wrap">{incident.notaResolucion}</p>
           </div>
         )}
+
+        <div className="border-t pt-4 mt-4">
+          <h2 className="font-medium mb-2">Comentarios</h2>
+          <div className="space-y-3 mb-4">
+            {comentarios.length === 0 && (
+              <p className="text-gray-500 text-sm">Sin comentarios aún</p>
+            )}
+            {comentarios.map((c) => (
+              <div key={c.id} className="bg-gray-50 rounded p-3">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span className="font-medium text-gray-700">{c.usuarioNombre}</span>
+                  <span>{new Date(c.fechaCreacion).toLocaleString()}</span>
+                </div>
+                <p className="text-gray-700 whitespace-pre-wrap text-sm">{c.contenido}</p>
+              </div>
+            ))}
+          </div>
+          <textarea value={nuevoComentario} onChange={(e) => setNuevoComentario(e.target.value)}
+            placeholder="Escribí un comentario..."
+            rows="2"
+            className="w-full border rounded px-3 py-2 mb-2"></textarea>
+          <button onClick={agregarComentario}
+            disabled={!nuevoComentario.trim()}
+            className={`px-4 py-2 rounded text-sm ${!nuevoComentario.trim()
+              ? 'bg-gray-300 cursor-not-allowed'
+              : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}>
+            Comentar
+          </button>
+        </div>
 
         {puedeCambiarEstado && (
           <div className="border-t pt-4 mt-4">

@@ -93,6 +93,8 @@ Todas las rutas cuelgan del contexto root (sin prefijo `/api` en Spring, el `/ap
 | `PUT /api/incidents/{id}/assign/{tecnicoId}` | autenticado | Asignar técnico (pone estado EN_PROCESO) |
 | `PUT /api/incidents/{id}/github-issue` | autenticado | Registrar el enlace del issue de GitHub (body JSON `{ "url": "..." }`). Lo usa el agente `github-issues` |
 | `DELETE /api/incidents/{id}` | ADMIN | Eliminar incidencia de la BD (borra también el archivo adjunto si existe) |
+| `GET /api/incidents/{id}/comments` | autenticado | Listar comentarios del incidente (autor y fecha incluidos) |
+| `POST /api/incidents/{id}/comments` | autenticado | Agregar comentario. Body JSON `{ "contenido": "..." }` (obligatorio, máx. 1000 caracteres). El autor se toma del JWT |
 | `GET /uploads/{filename}` | público | Servir archivo subido |
 | `/api/admin/**` | ADMIN | (marcado en SecurityConfig; aún sin controlador) |
 
