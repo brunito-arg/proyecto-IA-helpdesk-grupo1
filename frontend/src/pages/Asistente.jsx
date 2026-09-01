@@ -34,7 +34,11 @@ export default function Asistente() {
       const res = await fetch('/asistente-api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensaje: pregunta, historial }),
+        body: JSON.stringify({
+          mensaje: pregunta,
+          historial,
+          token: localStorage.getItem('token'),
+        }),
       })
 
       if (!res.ok || !res.body) throw new Error('respuesta inválida')

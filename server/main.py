@@ -1,6 +1,9 @@
 import json
 import os
 import sys
+import urllib.request
+import urllib.error
+from pathlib import Path
 
 import chromadb
 import ollama
@@ -20,6 +23,10 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 MODEL = os.getenv("CHAT_MODEL", "qwen2.5:3b")
 TOP_K = int(os.getenv("TOP_K", "5"))
 MAX_HISTORIAL = 8
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080").rstrip("/")
+
+TEXT_EXTENSIONS = {".txt", ".md", ".log", ".csv", ".json", ".xml", ".html", ".yml", ".yaml"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
 SYSTEM_PROMPT = (
     "Sos un asistente especializado en el proyecto helpdesk de la facultad. "
@@ -41,6 +48,7 @@ class Mensaje(BaseModel):
 class ChatRequest(BaseModel):
     mensaje: str = Field(min_length=1)
     historial: list[Mensaje] = Field(default_factory=list)
+    token: str | None = Field(default=None, max_length=4096)
 
 
 def cargar_colecciones():
@@ -79,13 +87,153 @@ def recuperar_contexto(pregunta):
     )
 
 
-def build_prompt(contexto, pregunta, historial):
+def build_prompt(contexto, pregunta, historial, incidentes):
     parts = ["Contexto del proyecto:\n```\n" + contexto + "\n```"]
+    if incidentes:
+        parts.append("Incidentes del usuario (en tiempo real):\n```\n" + incidentes + "\n```")
     for msg in historial:
         role = "Usuario" if msg.role == "user" else "Asistente"
         parts.append(f"{role}: {msg.content}")
     parts.append(f"Usuario: {pregunta}")
     return "\n\n".join(parts)
+
+
+def _http_json(url, token=None):
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _http_get_text(url):
+    req = urllib.request.Request(url, headers={"Accept": "*/*"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read()
+
+
+def listar_incidentes(token):
+    if not token:
+        return None
+    try:
+        return _http_json(f"{BACKEND_URL}/api/incidents", token=token)
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return "AUTH"
+        raise
+    except Exception:
+        raise
+
+
+def obtener_incidente(incident_id, token):
+    return _http_json(f"{BACKEND_URL}/api/incidents/{incident_id}", token=token)
+
+
+def obtener_comentarios(incident_id, token):
+    return _http_json(f"{BACKEND_URL}/api/incidents/{incident_id}/comments", token=token)
+
+
+def extraer_texto(path: Path):
+    ext = path.suffix.lower()
+    if ext in TEXT_EXTENSIONS:
+        return path.read_text(encoding="utf-8", errors="replace")
+    if ext == ".pdf":
+        try:
+            import fitz
+        except ImportError:
+            return "[Adjunto PDF: falta PyMuPDF para leerlo]"
+        doc = fitz.open(path)
+        texto = "\n".join(page.get_text() for page in doc)
+        doc.close()
+        return texto
+    if ext == ".docx":
+        try:
+            from docx import Document
+        except ImportError:
+            return "[Adjunto DOCX: falta python-docx para leerlo]"
+        doc = Document(path)
+        partes = [p.text for p in doc.paragraphs]
+        for tabla in doc.tables:
+            for fila in tabla.rows:
+                partes.append(" | ".join(cell.text for cell in fila.cells))
+        return "\n".join(partes)
+    if ext in IMAGE_EXTENSIONS:
+        return "[Adjunto imagen: sin OCR en esta version]"
+    return "[Adjunto de tipo no soportado]"
+
+
+def leer_adjunto(archivo_url):
+    if not archivo_url:
+        return None
+    try:
+        contenido = _http_get_text(f"{BACKEND_URL}/uploads/{archivo_url}")
+    except Exception:
+        return "[No se pudo descargar el adjunto]"
+    if isinstance(contenido, bytes):
+        nombre = Path(archivo_url).name
+        temp = Path(os.getenv("TMPDIR", "C:/Users/Alvaro/AppData/Local/Temp/opencode")) / nombre
+        temp.parent.mkdir(parents=True, exist_ok=True)
+        temp.write_bytes(contenido)
+        return extraer_texto(temp)
+
+
+def _detectar_id_incidente(pregunta):
+    import re
+    m = re.search(r"#\s*(\d+)", pregunta)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\bincidente[s]?\s+(\d+)\b", pregunta, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def construir_contexto_incidentes(token, pregunta):
+    if not token:
+        return None, None
+    try:
+        incidentes = listar_incidentes(token)
+    except Exception as e:
+        raise RuntimeError(f"No se pudo consultar los incidentes: {e}")
+
+    if incidentes == "AUTH":
+        return "AUTH", None
+    if not isinstance(incidentes, list):
+        return None, None
+
+    lineas = []
+    for it in incidentes:
+        lineas.append(
+            f"#{it.get('id')} | {it.get('titulo')} | {it.get('categoria')} | "
+            f"{it.get('prioridad')} | {it.get('estado')} | usuario: {it.get('usuarioNombre')} | "
+            f"tecnico: {it.get('tecnicoNombre') or 'sin asignar'}"
+        )
+    bloque = "\n".join(lineas) if lineas else "No hay incidentes disponibles."
+
+    inc_id = _detectar_id_incidente(pregunta)
+    if inc_id is not None:
+        permitidos = {it.get("id") for it in incidentes}
+        if inc_id in permitidos:
+            try:
+                det = obtener_incidente(inc_id, token)
+            except Exception as e:
+                det = None
+            if det:
+                bloque += "\n\nDetalle del incidente:\n" + json.dumps(det, ensure_ascii=False)
+                try:
+                    comentarios = obtener_comentarios(inc_id, token)
+                    if comentarios:
+                        bloque += "\nComentarios:\n" + json.dumps(comentarios, ensure_ascii=False)
+                except Exception:
+                    pass
+            adj = det.get("archivoUrl") if isinstance(det, dict) else None
+            if adj:
+                bloque += "\n\nContenido del adjunto:\n" + (leer_adjunto(adj) or "[sin contenido]")
+        else:
+            bloque += "\n\n(El usuario NO tiene permiso para ver el detalle del incidente #%s solicitado.)" % inc_id
+
+    return bloque, inc_id
 
 
 @app.get("/health")
@@ -96,12 +244,20 @@ def health():
         ollama_ok = True
     except Exception:
         pass
+    backend_ok = False
+    try:
+        urllib.request.urlopen(f"{BACKEND_URL}/api/auth/login", timeout=5)
+    except urllib.error.HTTPError:
+        backend_ok = True
+    except Exception:
+        pass
     return {
         "ollama": ollama_ok,
         "kb": len(colecciones) > 0,
         "chunks": sum(c.count() for c in colecciones),
         "colecciones": [c.name for c in colecciones],
         "modelo": MODEL,
+        "backend": backend_ok,
     }
 
 
@@ -123,9 +279,26 @@ def chat(req: ChatRequest):
             yield "data: [DONE]\n\n"
             return
 
+        incidentes = None
+        try:
+            incidentes, _ = construir_contexto_incidentes(req.token, req.mensaje)
+        except RuntimeError as e:
+            yield sse({"error": str(e)})
+            yield "data: [DONE]\n\n"
+            return
+        except Exception as e:
+            yield sse({"error": f"No se pudieron cargar los incidentes: {e}"})
+            yield "data: [DONE]\n\n"
+            return
+
+        if incidentes == "AUTH":
+            yield sse({"error": "Tu sesión expiró o el token no es válido. Volvé a iniciar sesión."})
+            yield "data: [DONE]\n\n"
+            return
+
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_prompt(contexto, req.mensaje, historial)},
+            {"role": "user", "content": build_prompt(contexto, req.mensaje, historial, incidentes)},
         ]
         try:
             for piece in cliente_ollama.chat(model=MODEL, messages=messages, stream=True):

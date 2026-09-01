@@ -38,10 +38,13 @@ services:
     environment:
       OLLAMA_URL: http://host.docker.internal:11434
       KB_DIR: /app/kb
+      BACKEND_URL: http://backend:8080
     volumes:
       - ./kb:/app/kb
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
 
   frontend:
     build: ./frontend

@@ -216,11 +216,13 @@ py -3.11 -m venv .venv
 
 El chatbot está disponible desde el frontend para **cualquier usuario logueado** (USER, TECNICO y ADMIN): página `/asistente` con link en el Navbar. Es un servicio FastAPI independiente (`server/`) que reutiliza la misma KB de chromadb (`kb/`) y los mismos modelos de Ollama que la versión de consola (§11.2). Además de la documentación (`docs`, `scripts/ingest.py`) consulta el contenido de los archivos adjuntos de los incidentes (`adjuntos`, `scripts/ingest_adjuntos.py`; ver §11.4).
 
+El chatbot también puede **consultar los incidentes del sistema en tiempo real** (plan B): el frontend le envía el **token JWT del usuario logueado** en el body del `POST /chat` (campo `token`), y el servicio llama al backend con ese token (`GET /api/incidents`). Como el backend ya filtra por rol (`IncidentController`), el **USER ve solo sus incidentes** y el **TECNICO/ADMIN ve todos**, sin duplicar lógica de roles en Python. Cuando se pregunta por un incidente concreto (p. ej. `#12` o `incidente 12`), enriquece con el detalle (`GET /api/incidents/{id}`), la **nota de resolución**, los **comentarios** (`GET /api/incidents/{id}/comments`) y, si el incidente tiene adjunto, el **contenido del archivo** (se descarga de `/uploads/{archivoUrl}`, que es público, y se extrae el texto: txt/md/pdf/docx). Para respetar la seguridad del rol USER, el asistente solo pide el detalle de IDs que el backend le haya permitido ver en el listado filtrado. Requisito de configuración: `BACKEND_URL` (default `http://localhost:8080`; en Docker `http://backend:8080`, ya configurado en `docker-compose.yml`).
+
 **Endpoints del asistente** (puerto 8000):
 | Método y ruta | Descripción |
 |---|---|
 | `GET /health` | Estado de Ollama y de la KB (`{ ollama, kb, chunks, colecciones, modelo }`) |
-| `POST /chat` | Chat RAG con streaming SSE. Body: `{ "mensaje": "...", "historial": [{ "role": "user"|"assistant", "content": "..." }] }` (historial opcional, últimos 8). Responde `data: {"token": "..."}` por cada fragmento, errores como `data: {"error": "..."}`, y termina con `data: [DONE]` |
+| `POST /chat` | Chat RAG con streaming SSE. Body: `{ "mensaje": "...", "historial": [...], "token": "<jwt opcional>" }` (historial opcional, últimos 8). Responde `data: {"token": "..."}` por fragmento, errores como `data: {"error": "..."}`, y termina con `data: [DONE]`. Si se envía `token`, consulta los incidentes del usuario en tiempo real según su rol |
 
 - El historial lo mantiene el frontend (state de React), el servicio no guarda estado.
 - El acceso queda protegido por login (ruta `ProtectedRoute`); el servicio Python no valida JWT.
