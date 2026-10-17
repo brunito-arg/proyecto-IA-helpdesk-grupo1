@@ -54,6 +54,7 @@ scripts/chat.py                              Chat RAG por consola (versión orig
 scripts/ingest_adjuntos.py                   Ingesta de archivos adjuntos de incidentes en chromadb
 scripts/sync-adjuntos.ps1                    Ejecuta ingest_adjuntos.py (tarea programada)
 server/main.py                               Servicio FastAPI del asistente (chat RAG con streaming SSE)
+server/rag.py                                Utilidades RAG compartidas (LangChain: embeddings, splitter, colecciones)
 server/Dockerfile                            Imagen Python 3.11-slim del asistente
 frontend/src/
   ├── api/axios.js        Cliente axios con interceptores
@@ -186,7 +187,7 @@ Cuando se abre un incidente de categoría **SOFTWARE**, puede crearse un issue e
 
 ## 11.2 Chat local con Ollama (RAG)
 
-Asistente por consola que responde preguntas sobre la documentación del proyecto usando `qwen2.5:3b` (Ollama) + chromadb (vector store local). No toca el backend ni el frontend.
+Asistente por consola que responde preguntas sobre la documentación del proyecto usando **LangChain** (`ChatOllama`, `OllamaEmbeddings`, `RecursiveCharacterTextSplitter`, `Chroma`) + `qwen2.5:3b` (Ollama) + chromadb (vector store local). No toca el backend ni el frontend. La lógica común vive en `server/rag.py` (embeddings, splitters, apertura de colecciones y recuperación), que reutilizan `scripts/ingest.py`, `scripts/ingest_adjuntos.py`, `scripts/chat.py` y `server/main.py`.
 
 **Requisitos:** Ollama instalado y corriendo, modelos `qwen2.5:3b` y `nomic-embed-text` bajados (`ollama pull qwen2.5:3b` y `ollama pull nomic-embed-text`) y Python 3.11 (preferir el de python.org, no el de msys64, para que las wheels de chromadb instalen bien).
 
@@ -202,7 +203,7 @@ py -3.11 -m venv .venv
 ```
 - Por defecto ingiere `AGENTS.md`, `instructions.md`, `.opencode/agent/*.md` y `.opencode/readme.md`. Personalizable con `--docs`.
 - Reconstruye la colección en cada corrida (idempotente); usar `--append` para agregar sin borrar.
-- Embeddings generados por Ollama con `nomic-embed-text` (modelo de embeddings dedicado; `qwen2.5:3b` es de chat y Ollama rechaza usarlo para embeddings). Personalizable con `--embed-model`.
+- Chunking con `RecursiveCharacterTextSplitter` (800/100 vía `server/rag.py`) y embeddings generados por Ollama con `nomic-embed-text` (`OllamaEmbeddings`) al vector store `Chroma`. `nomic-embed-text` es el modelo de embeddings dedicado; `qwen2.5:3b` es de chat y Ollama rechaza usarlo para embeddings. Personalizable con `--embed-model`.
 
 **Chat:**
 ```bash
@@ -245,8 +246,8 @@ El chatbot también puede responder sobre el **contenido de los archivos adjunto
 .\.venv\Scripts\python.exe scripts/ingest_adjuntos.py
 ```
 - Login al backend (admin por defecto: `admin@helpdesk.com` / `admin123`, sobrescribible con `--admin-email`/`--admin-password`), toma `GET /api/incidents` y arma el mapa `archivo_url → incidente`.
-- Lee cada archivo de `uploads/` y extrae texto según extensión: `.txt/.md/.log/.csv/.json/.xml/.html/.yml` directo, `.pdf` con PyMuPDF, `.docx` con python-docx. Las imágenes (`.png/.jpg/.gif/...`) se omiten con warning (no hay OCR).
-- Chunking idéntico al de `ingest.py` (800/100), embeddings `nomic-embed-text`, y agrega a la colección `adjuntos` con metadatos `{archivo: "Adjunto #<id> <titulo>", filename, incident_id, incident_titulo, tipo}`.
+- Lee cada archivo de `uploads/` y extrae texto según extensión con los loaders de LangChain: `.txt/.md/.log/.csv/.json/.xml/.html/.yml` con `TextLoader`, `.pdf` con `PyMuPDFLoader`, `.docx` con python-docx. Las imágenes (`.png/.jpg/.gif/...`) se omiten con warning (no hay OCR).
+- Chunking con el mismo `RecursiveCharacterTextSplitter` de `server/rag.py` (800/100), embeddings `nomic-embed-text`, y agrega a la colección `adjuntos` con metadatos `{archivo: "Adjunto #<id> <titulo>", filename, incident_id, incident_titulo, tipo}`.
 - Por defecto **reconstruye** la colección `adjuntos` (idempotente, sin duplicados). `--append` agrega sin borrar.
 
 **Cómo el chatbot la usa:** `server/main.py` y `scripts/chat.py` recuperan contexto de **dos colecciones** (`docs` = documentación del proyecto + `adjuntos` = archivos de incidentes) y mezclan/dedupean los `TOP_K` resultados. `/health` expone `colecciones` y el total de `chunks` de ambas.

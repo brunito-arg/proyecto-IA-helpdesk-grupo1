@@ -1,22 +1,27 @@
 import json
 import os
+import re
 import sys
+import tempfile
 import urllib.request
 import urllib.error
 from pathlib import Path
 
-import chromadb
-import ollama
-from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from rag import extraer_texto, open_collections, recuperar_contexto  # noqa: E402
+
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-KB_DIR = os.getenv("KB_DIR", "kb")
+KB_DIR = os.getenv("KB_DIR", str(Path(__file__).resolve().parent.parent / "kb"))
 COLLECTION = os.getenv("KB_COLLECTION", "docs")
 ADJUNTOS_COLLECTION = os.getenv("KB_ADJUNTOS", "adjuntos")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
@@ -24,9 +29,6 @@ MODEL = os.getenv("CHAT_MODEL", "qwen2.5:3b")
 TOP_K = int(os.getenv("TOP_K", "5"))
 MAX_HISTORIAL = 8
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080").rstrip("/")
-
-TEXT_EXTENSIONS = {".txt", ".md", ".log", ".csv", ".json", ".xml", ".html", ".yml", ".yaml"}
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
 SYSTEM_PROMPT = (
     "Sos un asistente especializado en el proyecto helpdesk de la facultad. "
@@ -37,7 +39,14 @@ SYSTEM_PROMPT = (
 
 app = FastAPI(title="Asistente Helpdesk")
 
-cliente_ollama = ollama.Client(host=OLLAMA_URL)
+colecciones = open_collections([COLLECTION, ADJUNTOS_COLLECTION], KB_DIR, EMBED_MODEL, OLLAMA_URL)
+
+llm = ChatOllama(model=MODEL, base_url=OLLAMA_URL)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", SYSTEM_PROMPT),
+    ("human", "{entrada}"),
+])
 
 
 class Mensaje(BaseModel):
@@ -49,42 +58,6 @@ class ChatRequest(BaseModel):
     mensaje: str = Field(min_length=1)
     historial: list[Mensaje] = Field(default_factory=list)
     token: str | None = Field(default=None, max_length=4096)
-
-
-def cargar_colecciones():
-    client = chromadb.PersistentClient(path=KB_DIR)
-    embedding_fn = OllamaEmbeddingFunction(url=OLLAMA_URL, model_name=EMBED_MODEL)
-    colecciones = []
-    for nombre in (COLLECTION, ADJUNTOS_COLLECTION):
-        try:
-            colecciones.append(client.get_collection(nombre, embedding_function=embedding_fn))
-        except Exception as e:
-            print(f"[asistente] No se pudo abrir la coleccion '{nombre}'. Corré scripts/ingest.py o scripts/ingest_adjuntos.py ({e})")
-    return colecciones
-
-
-colecciones = cargar_colecciones()
-for c in colecciones:
-    print(f"[asistente] Base de conocimiento cargada: '{c.name}' ({c.count()} chunks)")
-
-
-def recuperar_contexto(pregunta):
-    por_col = max(1, TOP_K // max(1, len(colecciones)))
-    fragmentos = []
-    for coleccion in colecciones:
-        result = coleccion.query(query_texts=[pregunta], n_results=por_col)
-        docs = result.get("documents", [[]])[0]
-        metas = result.get("metadatas", [[]])[0]
-        fragmentos.extend(zip(docs, metas))
-    vistos = set()
-    unicos = []
-    for doc, meta in fragmentos:
-        if doc not in vistos:
-            vistos.add(doc)
-            unicos.append((doc, meta))
-    return "\n\n".join(
-        f"[Fuente: {m.get('archivo', '?')}] {doc}" for doc, m in unicos[:TOP_K]
-    )
 
 
 def build_prompt(contexto, pregunta, historial, incidentes):
@@ -134,35 +107,6 @@ def obtener_comentarios(incident_id, token):
     return _http_json(f"{BACKEND_URL}/api/incidents/{incident_id}/comments", token=token)
 
 
-def extraer_texto(path: Path):
-    ext = path.suffix.lower()
-    if ext in TEXT_EXTENSIONS:
-        return path.read_text(encoding="utf-8", errors="replace")
-    if ext == ".pdf":
-        try:
-            import fitz
-        except ImportError:
-            return "[Adjunto PDF: falta PyMuPDF para leerlo]"
-        doc = fitz.open(path)
-        texto = "\n".join(page.get_text() for page in doc)
-        doc.close()
-        return texto
-    if ext == ".docx":
-        try:
-            from docx import Document
-        except ImportError:
-            return "[Adjunto DOCX: falta python-docx para leerlo]"
-        doc = Document(path)
-        partes = [p.text for p in doc.paragraphs]
-        for tabla in doc.tables:
-            for fila in tabla.rows:
-                partes.append(" | ".join(cell.text for cell in fila.cells))
-        return "\n".join(partes)
-    if ext in IMAGE_EXTENSIONS:
-        return "[Adjunto imagen: sin OCR en esta version]"
-    return "[Adjunto de tipo no soportado]"
-
-
 def leer_adjunto(archivo_url):
     if not archivo_url:
         return None
@@ -172,14 +116,13 @@ def leer_adjunto(archivo_url):
         return "[No se pudo descargar el adjunto]"
     if isinstance(contenido, bytes):
         nombre = Path(archivo_url).name
-        temp = Path(os.getenv("TMPDIR", "C:/Users/Alvaro/AppData/Local/Temp/opencode")) / nombre
+        temp = Path(tempfile.gettempdir()) / nombre
         temp.parent.mkdir(parents=True, exist_ok=True)
         temp.write_bytes(contenido)
         return extraer_texto(temp)
 
 
 def _detectar_id_incidente(pregunta):
-    import re
     m = re.search(r"#\s*(\d+)", pregunta)
     if m:
         return int(m.group(1))
@@ -217,7 +160,7 @@ def construir_contexto_incidentes(token, pregunta):
         if inc_id in permitidos:
             try:
                 det = obtener_incidente(inc_id, token)
-            except Exception as e:
+            except Exception:
                 det = None
             if det:
                 bloque += "\n\nDetalle del incidente:\n" + json.dumps(det, ensure_ascii=False)
@@ -240,7 +183,7 @@ def construir_contexto_incidentes(token, pregunta):
 def health():
     ollama_ok = False
     try:
-        cliente_ollama.list()
+        urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=5)
         ollama_ok = True
     except Exception:
         pass
@@ -254,8 +197,8 @@ def health():
     return {
         "ollama": ollama_ok,
         "kb": len(colecciones) > 0,
-        "chunks": sum(c.count() for c in colecciones),
-        "colecciones": [c.name for c in colecciones],
+        "chunks": sum(c._collection.count() for c in colecciones),
+        "colecciones": [c._collection.name for c in colecciones],
         "modelo": MODEL,
         "backend": backend_ok,
     }
@@ -273,7 +216,7 @@ def chat(req: ChatRequest):
 
     def stream():
         try:
-            contexto = recuperar_contexto(req.mensaje)
+            contexto = recuperar_contexto(req.mensaje, colecciones, TOP_K)
         except Exception as e:
             yield sse({"error": f"Error al buscar en la base de conocimiento (¿Ollama está corriendo?): {e}"})
             yield "data: [DONE]\n\n"
@@ -296,13 +239,10 @@ def chat(req: ChatRequest):
             yield "data: [DONE]\n\n"
             return
 
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_prompt(contexto, req.mensaje, historial, incidentes)},
-        ]
+        messages = prompt.format_messages(entrada=build_prompt(contexto, req.mensaje, historial, incidentes))
         try:
-            for piece in cliente_ollama.chat(model=MODEL, messages=messages, stream=True):
-                token = piece["message"]["content"]
+            for chunk in llm.stream(messages):
+                token = chunk.content
                 if token:
                     yield sse({"token": token})
         except Exception as e:

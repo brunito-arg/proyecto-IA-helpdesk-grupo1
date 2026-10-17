@@ -4,14 +4,14 @@ import sys
 import urllib.request
 from pathlib import Path
 
-import chromadb
-from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
+
+import chromadb  # noqa: E402
+
+from rag import IMAGE_EXTENSIONS, TEXT_EXTENSIONS, extraer_texto, get_vectorstore, split_document  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
-
-TEXT_EXTENSIONS = {".txt", ".md", ".log", ".csv", ".json", ".xml", ".html", ".yml", ".yaml"}
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
 
 def login(backend_url, email, password):
@@ -36,62 +36,19 @@ def fetch_incidents(backend_url, token):
         return json.loads(resp.read().decode("utf-8"))
 
 
-def extraer_texto(path):
+def leer_adjunto(path):
     ext = path.suffix.lower()
-    if ext in TEXT_EXTENSIONS:
-        return path.read_text(encoding="utf-8", errors="replace")
-    if ext == ".pdf":
-        try:
-            import fitz
-        except ImportError:
-            print(f"  [warn] {path.name}: falta PyMuPDF para leer PDF")
-            return ""
-        doc = fitz.open(path)
-        texto = "\n".join(page.get_text() for page in doc)
-        doc.close()
-        return texto
-    if ext == ".docx":
-        try:
-            from docx import Document
-        except ImportError:
-            print(f"  [warn] {path.name}: falta python-docx para leer DOCX")
-            return ""
-        doc = Document(path)
-        partes = [p.text for p in doc.paragraphs]
-        for tabla in doc.tables:
-            for fila in tabla.rows:
-                partes.append(" | ".join(cell.text for cell in fila.cells))
-        return "\n".join(partes)
     if ext in IMAGE_EXTENSIONS:
         print(f"  [warn] {path.name}: tipo imagen, sin OCR en esta version")
         return ""
-    print(f"  [warn] {path.name}: tipo {ext or 'desconocido'} no soportado")
-    return ""
-
-
-def split_document(text, chunk_size, overlap):
-    chunks = []
-    text = text.strip()
-    if not text:
-        return chunks
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        if end < len(text):
-            break_at = text.rfind("\n", start, end)
-            if break_at > start + chunk_size // 2:
-                end = break_at
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        if end >= len(text):
-            break
-        start = end - overlap
-    return chunks
+    if ext not in TEXT_EXTENSIONS and ext not in (".pdf", ".docx"):
+        print(f"  [warn] {path.name}: tipo {ext or 'desconocido'} no soportado")
+        return ""
+    return extraer_texto(path)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ingiere los archivos adjuntos de los incidentes en chromadb (RAG local con Ollama).")
+    parser = argparse.ArgumentParser(description="Ingiere los archivos adjuntos de los incidentes en chromadb (RAG con LangChain + Ollama).")
     parser.add_argument("--backend-url", default="http://localhost:8080",
                         help="URL del backend Spring (default: http://localhost:8080).")
     parser.add_argument("--admin-email", default="admin@helpdesk.com",
@@ -129,7 +86,7 @@ def main():
             adjuntos[inc["archivoUrl"]] = inc
 
     if not adjuntos:
-        print(f"[ingest-adjuntos] No hay incidentes con archivos adjuntos.")
+        print("[ingest-adjuntos] No hay incidentes con archivos adjuntos.")
         return
 
     client = chromadb.PersistentClient(path=args.db)
@@ -140,8 +97,7 @@ def main():
         except Exception:
             pass
 
-    embedding_fn = OllamaEmbeddingFunction(url=args.ollama_url, model_name=args.embed_model)
-    collection = client.get_or_create_collection(args.collection, embedding_function=embedding_fn)
+    store = get_vectorstore(args.collection, args.db, args.embed_model, args.ollama_url, client=client)
 
     total = 0
     for filename, inc in sorted(adjuntos.items()):
@@ -149,22 +105,23 @@ def main():
         if not path.exists():
             print(f"  [warn] {filename}: no existe en {uploads_dir}")
             continue
-        texto = extraer_texto(path)
-        chunks = split_document(texto, args.chunk_size, args.overlap)
-        if not chunks:
+        texto = leer_adjunto(path)
+        if not texto:
             continue
         etiqueta = f"Adjunto #{inc['id']} {inc.get('titulo', '')}".strip()
-        ids = [f"adjunto:{filename}#{i}" for i in range(len(chunks))]
-        metadatas = [{
+        metadata = {
             "archivo": etiqueta,
             "filename": filename,
             "incident_id": inc["id"],
             "incident_titulo": inc.get("titulo", ""),
             "tipo": "adjunto",
-        } for _ in range(len(chunks))]
-        collection.add(ids=ids, documents=chunks, metadatas=metadatas)
-        total += len(chunks)
-        print(f"[ingest-adjuntos] {etiqueta} ({filename}): {len(chunks)} chunks")
+        }
+        documentos, ids = split_document(texto, metadata, args.chunk_size, args.overlap, id_prefix=f"adjunto:{filename}")
+        if not documentos:
+            continue
+        store.add_documents(documentos, ids=ids)
+        total += len(documentos)
+        print(f"[ingest-adjuntos] {etiqueta} ({filename}): {len(documentos)} chunks")
 
     print(f"[ingest-adjuntos] Listo. {total} chunks en la coleccion '{args.collection}' (embedding: {args.embed_model}).")
 

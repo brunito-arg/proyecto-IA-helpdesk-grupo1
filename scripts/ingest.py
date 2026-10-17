@@ -2,8 +2,11 @@ import argparse
 import sys
 from pathlib import Path
 
-import chromadb
-from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
+
+import chromadb  # noqa: E402
+
+from rag import get_vectorstore, split_document  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
@@ -30,29 +33,8 @@ def list_docs(patterns):
     return unique
 
 
-def split_document(text, chunk_size=800, overlap=100):
-    chunks = []
-    text = text.strip()
-    if not text:
-        return chunks
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        if end < len(text):
-            break_at = text.rfind("\n", start, end)
-            if break_at > start + chunk_size // 2:
-                end = break_at
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        if end >= len(text):
-            break
-        start = end - overlap
-    return chunks
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Ingiere la documentacion del proyecto en chromadb (RAG local con Ollama).")
+    parser = argparse.ArgumentParser(description="Ingiere la documentacion del proyecto en chromadb (RAG con LangChain + Ollama).")
     parser.add_argument("--docs", nargs="+", default=DEFAULT_DOCS,
                         help="Globs de archivos a ingerir (default: docs del proyecto).")
     parser.add_argument("--embed-model", default="nomic-embed-text",
@@ -77,8 +59,7 @@ def main():
         except Exception:
             pass
 
-    embedding_fn = OllamaEmbeddingFunction(url=args.ollama_url, model_name=args.embed_model)
-    collection = client.get_or_create_collection(args.collection, embedding_function=embedding_fn)
+    store = get_vectorstore(args.collection, args.db, args.embed_model, args.ollama_url, client=client)
 
     files = list_docs(args.docs)
     if not files:
@@ -92,15 +73,13 @@ def main():
     total = 0
     for f in files:
         text = f.read_text(encoding="utf-8", errors="replace")
-        chunks = split_document(text, args.chunk_size, args.overlap)
-        if not chunks:
-            continue
         rel = f.as_posix()
-        ids = [f"{rel}#{i}" for i in range(len(chunks))]
-        metadatas = [{"archivo": rel, "indice": i} for i in range(len(chunks))]
-        collection.add(ids=ids, documents=chunks, metadatas=metadatas)
-        total += len(chunks)
-        print(f"[ingest] {rel}: {len(chunks)} chunks")
+        documentos, ids = split_document(text, {"archivo": rel}, args.chunk_size, args.overlap, id_prefix=rel)
+        if not documentos:
+            continue
+        store.add_documents(documentos, ids=ids)
+        total += len(documentos)
+        print(f"[ingest] {rel}: {len(documentos)} chunks")
 
     print(f"[ingest] Listo. {total} chunks en la coleccion '{args.collection}' (embedding: {args.embed_model}).")
 
